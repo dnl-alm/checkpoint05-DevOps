@@ -442,18 +442,3 @@ Resposta:
   }
 }
 ```
-
----
-
-## 5. Rodando localmente (opcional)
-
-Requer JDK 21 e Maven, e o IP da sua máquina liberado no firewall do SQL (a regra `liberaGeral` já cobre isso).
-
-```bash
-export SPRING_DATASOURCE_URL='jdbc:sqlserver://sql-server-checkpoint05.database.windows.net:1433;database=db-checkpoint05;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;'
-export SPRING_DATASOURCE_USERNAME='user-checkpoint05'
-export SPRING_DATASOURCE_PASSWORD='SuaSenhaForte@123'
-mvn spring-boot:run
-```
-
-A API sobe em `http://localhost:8080`.
