@@ -38,6 +38,7 @@ Regras de negócio:
 │   └── library-api.postman_collection.json    # JSON das operações (Postman)
 ├── scripts/
 │   ├── deploy-azure.sh                        # script Azure CLI (provisionamento + CI/CD)
+│   ├── github-secrets.sh                      # mostra os valores para os Secrets do GitHub
 │   └── ddl.sql                                # DDL das tabelas
 ├── src/main/java/br/com/library/
 │   ├── controller/      # endpoints REST
@@ -57,7 +58,7 @@ Regras de negócio:
 
 ## 2. Arquitetura da solução
 
-![Arquitetura](docs/arquitetura.png)
+![Arquitetura](/docs/arquitetura.svg)
 
 Fluxo:
 1. O desenvolvedor faz **push** do código para o GitHub.
@@ -142,7 +143,65 @@ Na etapa 10, o CLI mostra um **código** e pede que você autorize o acesso ao G
 git pull origin main
 ```
 
-### 3.6 Criar as tabelas (DDL)
+### 3.6 Cadastrar os Secrets no GitHub
+
+As variáveis de conexão com o banco também precisam existir no GitHub, para o build do GitHub Actions (e os testes) conseguir usá-las. Elas são copiadas manualmente das App Settings do Web App.
+
+**1. Mostrar os valores**
+
+```bash
+bash scripts/github-secrets.sh
+```
+
+Saída:
+
+```
+Name:   SPRING_DATASOURCE_URL
+Secret: jdbc:sqlserver://sql-server-checkpoint05.database.windows.net:1433;database=...
+
+Name:   SPRING_DATASOURCE_USERNAME
+Secret: user-checkpoint05
+
+Name:   SPRING_DATASOURCE_PASSWORD
+Secret: ********
+```
+
+> A senha aparece em texto puro. Rode num terminal só seu e use `clear` ao terminar.
+
+**2. Cadastrar no repositório**
+
+No GitHub, abra **Settings → Secrets and variables → Actions → New repository secret** e crie os três secrets abaixo, copiando cada valor da saída do script:
+
+| Name | Secret |
+|------|--------|
+| `SPRING_DATASOURCE_URL` | valor de `SPRING_DATASOURCE_URL` |
+| `SPRING_DATASOURCE_USERNAME` | valor de `SPRING_DATASOURCE_USERNAME` |
+| `SPRING_DATASOURCE_PASSWORD` | valor de `SPRING_DATASOURCE_PASSWORD` |
+
+**3. Passar os Secrets para o build no workflow**
+
+No arquivo criado pelo script em `.github/workflows/` (ex.: `main_library-checkpoint05.yml`), adicione o bloco `env` ao passo de build do Maven:
+
+```yaml
+      - name: Build with Maven
+        run: mvn clean install
+        env:
+          SPRING_DATASOURCE_URL: ${{ secrets.SPRING_DATASOURCE_URL }}
+          SPRING_DATASOURCE_USERNAME: ${{ secrets.SPRING_DATASOURCE_USERNAME }}
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.SPRING_DATASOURCE_PASSWORD }}
+```
+
+Faça commit e push dessa alteração. Um novo build começa automaticamente.
+
+```bash
+git add .github/workflows/
+git commit -m "Secrets do banco no build"
+git push origin main
+```
+
+> Os runners do GitHub usam IPs variáveis. Quem permite que eles alcancem o banco é a regra de firewall `liberaGeral`. Se ela for removida, os testes no Actions não conseguem conectar.
+
+### 3.7 Criar as tabelas (DDL)
 
 1. No portal da Azure, abra **SQL databases → db-checkpoint05 → Query editor (preview)**.
 2. Entre com o usuário `user-checkpoint05` e a senha que você definiu.
@@ -151,7 +210,7 @@ git pull origin main
 
 > A aplicação também usa `ddl-auto=update`, então criaria as tabelas que faltassem. O DDL é a fonte oficial do schema. Como ele começa com `DROP TABLE IF EXISTS`, pode ser executado mais de uma vez.
 
-### 3.7 Acompanhar o deploy
+### 3.8 Acompanhar o deploy
 
 No GitHub, abra a aba **Actions** do repositório. O workflow tem duas etapas, **build** e **deploy**. Quando as duas ficarem verdes, a API está no ar.
 
@@ -163,7 +222,7 @@ az webapp log tail --name library-checkpoint05 --resource-group rg-checkpoint05
 
 > No plano F1 (gratuito), a primeira requisição depois de um tempo parado pode levar de 30 a 60 segundos, porque o app "acorda". Isso é normal.
 
-### 3.8 Testar a API
+### 3.9 Testar a API
 
 ```bash
 curl https://library-checkpoint05.azurewebsites.net/autores
@@ -171,14 +230,14 @@ curl https://library-checkpoint05.azurewebsites.net/autores
 
 Para testar tudo de uma vez, importe [`docs/library-api.postman_collection.json`](docs/library-api.postman_collection.json) no Postman (**Import → File**). A variável `baseUrl` já aponta para o Web App.
 
-### 3.9 Ver o monitoramento
+### 3.10 Ver o monitoramento
 
 No portal, abra **Application Insights → ai-checkpoint05**:
 - **Live Metrics**: requisições em tempo real.
 - **Transaction search**: cada chamada, com tempo de resposta e status.
 - **Failures**: erros 4xx e 5xx.
 
-### 3.10 Remover tudo (para não gerar custo)
+### 3.11 Remover tudo (para não gerar custo)
 
 ```bash
 az group delete --name rg-checkpoint05 --yes --no-wait
@@ -193,6 +252,7 @@ az group delete --name rg-checkpoint05 --yes --no-wait
 | App retorna **503 / Application Error** | Veja `az webapp log tail`. Geralmente é erro de conexão com o banco: confira as App Settings `SPRING_DATASOURCE_*`. |
 | `Cannot open server ... requested by the login` | Falta a regra de firewall do SQL para o seu IP ou para os serviços da Azure. |
 | Workflow falha no *build* | O `pom.xml` não está na raiz do repositório. |
+| Build falha com `Could not resolve placeholder 'SPRING_DATASOURCE_URL'` | Os Secrets não foram cadastrados ou o bloco `env` não foi adicionado ao workflow (seção 3.6). |
 
 ---
 
